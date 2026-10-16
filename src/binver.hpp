@@ -17,10 +17,21 @@
 
 namespace ft {
 
-// Scan an ELF file's bytes for known version banners. Returns one Component per
+// Scan a file's bytes for known version banners. Returns one Component per
 // distinct (name, version) found, source "binary-version", with purl + CPE from
-// the curated table. Non-ELF input returns {} (the banners are noise in text).
-std::vector<Component> scan_binver(std::span<const uint8_t> data, const std::string& origin_path);
+// the curated table.
+//
+// By default the scan runs only on ELF input; non-ELF input returns {} because a
+// version banner in arbitrary bytes (release notes, help text, a decompressed
+// container blob that mirrors an ELF already in the tree) is noise. Set
+// `scan_nonelf` to also scan non-ELF input, restricted to the distinctive-anchor
+// signatures that are false-positive-safe on arbitrary bytes (VersionSig::raw_safe).
+// The caller passes this only for a monolithic tree (no ELF member anywhere), so
+// statically-linked components in proprietary-OS / RTOS single-image firmware are
+// recovered without changing the result on any filesystem-based image. ELF input
+// always scans the full signature table regardless of the flag.
+std::vector<Component> scan_binver(std::span<const uint8_t> data, const std::string& origin_path,
+                                   bool scan_nonelf = false);
 
 // Scan any file for the Linux kernel banner ("Linux version X.Y.Z ...") and
 // return a linux_kernel component (source "kernel-banner", CPE

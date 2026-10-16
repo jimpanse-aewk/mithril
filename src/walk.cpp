@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <optional>
 #include <string_view>
@@ -74,8 +75,17 @@ void parse_os_release(std::span<const uint8_t> data, std::string& id, std::strin
     }
 }
 
+// Peek the first 4 bytes for the ELF magic without mmapping the whole file. Used
+// to decide whether a tree is monolithic (no ELF member anywhere).
+bool path_is_elf(const fs::path& path) {
+    std::ifstream f(path, std::ios::binary);
+    char b[4] = {0, 0, 0, 0};
+    if (!f.read(b, 4)) return false;
+    return b[0] == 0x7f && b[1] == 'E' && b[2] == 'L' && b[3] == 'F';
+}
+
 FileHits scan_one(const fs::path& path, const fs::path& root, const Passes& passes,
-                  const Engine* engine) {
+                  const Engine* engine, bool monolithic) {
     FileHits fh;
     std::error_code ec;
     fh.path = fs::relative(path, root, ec).string();
@@ -109,7 +119,10 @@ FileHits scan_one(const fs::path& path, const fs::path& root, const Passes& pass
     }
     if (passes.sbom) {
         fh.components = scan_sbom(fh.path, fm.span());  // M4 package DBs
-        auto bv = scan_binver(fm.span(), fh.path);      // binary version strings (ELF only)
+        // Binary version banners. ELF members always; non-ELF bytes only when the
+        // whole tree is monolithic (no ELF anywhere), so proprietary-OS / RTOS
+        // single-image firmware gets an SBOM while filesystem trees are untouched.
+        auto bv = scan_binver(fm.span(), fh.path, monolithic);
         fh.components.insert(fh.components.end(), std::make_move_iterator(bv.begin()),
                              std::make_move_iterator(bv.end()));
         auto lm = scan_langmanifest(fh.path, fm.span());  // language manifests/lockfiles
@@ -250,6 +263,21 @@ Report scan_path(const std::string& root, const Passes& passes, unsigned nthread
     const size_t n = paths.size();
     rep.file_count = n;
 
+    // A monolithic image has no ELF member anywhere (proprietary-OS / RTOS single
+    // blob). Only then does binver scan non-ELF bytes for statically-linked
+    // component banners; a tree with any ELF keeps the ELF-only behavior, so
+    // filesystem images are unaffected. Cheap 4-byte peek, short-circuited on the
+    // first ELF. Only needed for the SBOM/CVE passes.
+    bool monolithic = false;
+    if (passes.sbom || passes.cve) {
+        monolithic = true;
+        for (const auto& p : paths)
+            if (path_is_elf(p)) {
+                monolithic = false;
+                break;
+            }
+    }
+
     std::vector<FileHits> results(n);
     if (nthreads == 0) nthreads = 1;
     nthreads = std::min<unsigned>(nthreads, std::max<size_t>(1, n));
@@ -257,7 +285,7 @@ Report scan_path(const std::string& root, const Passes& passes, unsigned nthread
     std::atomic<size_t> next{0};
     auto worker = [&] {
         for (size_t i = next.fetch_add(1); i < n; i = next.fetch_add(1))
-            results[i] = scan_one(paths[i], rel_root, passes, eng);
+            results[i] = scan_one(paths[i], rel_root, passes, eng, monolithic);
     };
     std::vector<std::thread> pool;
     for (unsigned t = 0; t < nthreads; ++t) pool.emplace_back(worker);

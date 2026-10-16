@@ -468,6 +468,14 @@ static std::vector<ft::Component> binver(const std::string& content) {
                            "bin/prog");
 }
 
+// Same, but with scan_nonelf=true: the monolithic-image path that also scans
+// non-ELF bytes (with the raw_safe signature subset).
+static std::vector<ft::Component> binver_raw(const std::string& content) {
+    return ft::scan_binver(std::span<const uint8_t>(
+                               reinterpret_cast<const uint8_t*>(content.data()), content.size()),
+                           "image.bin", /*scan_nonelf=*/true);
+}
+
 static void test_binver() {
     // "\x7f" "ELF" via explicit bytes (\x7f\x45\x4c\x46); banners separated by
     // spaces (is_elf only checks the first 4 bytes, the rest is arbitrary).
@@ -495,9 +503,41 @@ static void test_binver() {
         if (c.name == "busybox") ++bb_count;
     CHECK(bb_count == 1);
 
-    // Non-ELF content: version banners are ignored (noise in text/docs).
+    // Non-ELF content: version banners are ignored (noise in text/docs) on the
+    // default (filesystem) path.
     std::string txt = "Release notes: built with BusyBox v1.36.1 and OpenSSL 1.1.1n.\n";
     CHECK(binver(txt).empty());
+
+    // Monolithic non-ELF path (scan_nonelf=true): a statically-linked image with
+    // no ELF member still yields its component banners. A proprietary-OS image
+    // carries the banners as literals; the strict patterns pin real versions.
+    std::string mono = "rtos image \x01\x02 BusyBox v1.31.1 junk "
+                       "OpenSSL 0.9.7b 10 Apr 2003 \xaa\xbb Dropbear v2019.78 end";
+    auto mr = binver_raw(mono);
+    auto mby = [&](const std::string& n) -> const ft::Component* {
+        for (const auto& c : mr)
+            if (c.name == n) return &c;
+        return nullptr;
+    };
+    CHECK(mby("busybox") && mby("busybox")->version == "1.31.1");
+    CHECK(mby("openssl") && mby("openssl")->version == "0.9.7b");
+    CHECK(mby("dropbear") && mby("dropbear")->version == "2019.78");
+    // The same bytes on the default path stay empty (filesystem images unchanged).
+    CHECK(binver(mono).empty());
+
+    // raw_safe subset: zlib's anchors ("inflate "/"deflate ") are ordinary words,
+    // so zlib stays ELF-gated and is NOT matched on non-ELF bytes...
+    std::string zraw = "payload inflate 1.2.11 Copyright blah";
+    CHECK(binver_raw(zraw).empty());
+    // ...but inside an ELF the full table still runs and zlib is found.
+    std::string zelf = std::string("\x7f\x45\x4c\x46", 4) + " inflate 1.2.11 Copyright blah";
+    auto zc = binver(zelf);
+    CHECK(zc.size() == 1 && zc[0].name == "zlib" && zc[0].version == "1.2.11");
+
+    // The strict date requirement (issue #7) is preserved on the non-ELF path: a
+    // corrupted build-date banner is still rejected, not emitted with a bogus date.
+    std::string bad = "blob OpenSSL 0.9.7b 10 Apr 200\x22 8 more";
+    CHECK(binver_raw(bad).empty());
 
     // glibc + musl content banners.
     std::string glibc = std::string("\x7f\x45\x4c\x46", 4) +

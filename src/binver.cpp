@@ -15,17 +15,26 @@ namespace {
 // A curated version-banner signature. `anchors` seed the Aho-Corasick prefilter;
 // on a hit, `pattern` runs on a bounded window and its first capture group is the
 // version. `cpe_vendor`/`cpe_product` co-derive the CPE for the CVE join.
+//
+// `raw_safe` marks a signature whose anchor + pattern is specific enough to run on
+// arbitrary (non-ELF) bytes without false positives, used for monolithic non-ELF
+// firmware (see scan_binver's scan_nonelf path). A signature is raw_safe when its
+// anchor is a distinctive product string (not a common English word) and the
+// pattern pins a full version right after it. zlib is the one exclusion: its
+// anchors ("inflate "/"deflate ") are ordinary words that occur in prose and
+// code, so it stays ELF-gated until it gets its own raw-bytes FP check.
 struct VersionSig {
     std::string name;
     std::vector<std::string> anchors;
     std::string pattern;  // ECMAScript regex, one capture group = version
     std::string cpe_vendor;
     std::string cpe_product;
+    bool raw_safe;  // safe to match on non-ELF bytes (monolithic-image scan)
 };
 
 const std::vector<VersionSig>& sigs() {
     static const std::vector<VersionSig> s = {
-        {"busybox", {"BusyBox v"}, R"(BusyBox v(\d+\.\d+\.\d+))", "busybox", "busybox"},
+        {"busybox", {"BusyBox v"}, R"(BusyBox v(\d+\.\d+\.\d+))", "busybox", "busybox", true},
         // openssl: the authoritative banner is OPENSSL_VERSION_TEXT, "OpenSSL
         // <ver>[<suffix>]  <build date>" (e.g. "OpenSSL 1.1.1l  24 Aug 2021").
         // Requiring the trailing date rejects requirement/help text ("OpenSSL
@@ -38,17 +47,21 @@ const std::vector<VersionSig>& sigs() {
          {"OpenSSL "},
          R"(OpenSSL (\d+\.\d+\.\d+[a-z]?)(?:[-\s][A-Za-z][\w-]*)?\s+(?:\d{1,2} [A-Z][a-z]{2}|[A-Z][a-z]{2} +\d{1,2}) \d{4})",
          "openssl",
-         "openssl"},
+         "openssl",
+         true},
         {"dropbear",
          {"Dropbear v", "Dropbear-", "dropbear_"},
          R"([Dd]ropbear[ _v-]*(\d{4}\.\d+))",
          "dropbear_ssh_project",
-         "dropbear_ssh"},
-        {"dnsmasq", {"Dnsmasq version "}, R"(Dnsmasq version (\d+\.\d+))", "thekelleys", "dnsmasq"},
-        {"curl", {"libcurl/", "curl/"}, R"(curl/(\d+\.\d+\.\d+))", "haxx", "libcurl"},
-        {"zlib", {"inflate ", "deflate "}, R"((?:in|de)flate (\d+\.\d+\.\d+))", "zlib", "zlib"},
-        {"lighttpd", {"lighttpd/"}, R"(lighttpd/(\d+\.\d+\.\d+))", "lighttpd", "lighttpd"},
-        {"wget", {"GNU Wget "}, R"(GNU Wget (\d+\.\d+(?:\.\d+)?))", "gnu", "wget"},
+         "dropbear_ssh",
+         true},
+        {"dnsmasq", {"Dnsmasq version "}, R"(Dnsmasq version (\d+\.\d+))", "thekelleys", "dnsmasq",
+         true},
+        {"curl", {"libcurl/", "curl/"}, R"(curl/(\d+\.\d+\.\d+))", "haxx", "libcurl", true},
+        // zlib stays ELF-gated: "inflate "/"deflate " are ordinary words (raw_safe=false).
+        {"zlib", {"inflate ", "deflate "}, R"((?:in|de)flate (\d+\.\d+\.\d+))", "zlib", "zlib", false},
+        {"lighttpd", {"lighttpd/"}, R"(lighttpd/(\d+\.\d+\.\d+))", "lighttpd", "lighttpd", true},
+        {"wget", {"GNU Wget "}, R"(GNU Wget (\d+\.\d+(?:\.\d+)?))", "gnu", "wget", true},
         // NOTE: no OpenSSH banner rule — dropbear/openssh embed bug-compatibility
         // version lists ("OpenSSH_3.0", "OpenSSH_7.x", …) that a banner match reads
         // as dozens of bogus versions. dropbear (the SSH in most firmware) is above.
@@ -58,21 +71,21 @@ const std::vector<VersionSig>& sigs() {
         // ("v0.8.x_rtw_r24", "v2.10_ATBM_0.2") still resolves to the base version
         // because the optional third part requires a dot + digits (issue #10).
         {"wpa_supplicant", {"wpa_supplicant v"}, R"(wpa_supplicant v(\d+\.\d+(?:\.\d+)?))", "w1.fi",
-         "wpa_supplicant"},
-        {"hostapd", {"hostapd v"}, R"(hostapd v(\d+\.\d+(?:\.\d+)?))", "w1.fi", "hostapd"},
+         "wpa_supplicant", true},
+        {"hostapd", {"hostapd v"}, R"(hostapd v(\d+\.\d+(?:\.\d+)?))", "w1.fi", "hostapd", true},
         {"mosquitto", {"mosquitto version "}, R"(mosquitto version (\d+\.\d+\.\d+))", "eclipse",
-         "mosquitto"},
-        {"glibc", {"GNU C Library"}, R"(release version (\d+\.\d+(?:\.\d+)?))", "gnu", "glibc"},
-        {"musl", {"musl libc"}, R"(Version (\d+\.\d+\.\d+))", "musl-libc", "musl"},
+         "mosquitto", true},
+        {"glibc", {"GNU C Library"}, R"(release version (\d+\.\d+(?:\.\d+)?))", "gnu", "glibc", true},
+        {"musl", {"musl libc"}, R"(Version (\d+\.\d+\.\d+))", "musl-libc", "musl", true},
         // TLS/crypto libraries: single-value runtime banners in the .so/binary.
-        {"mbedtls", {"mbed TLS "}, R"(mbed TLS (\d+\.\d+\.\d+))", "arm", "mbed_tls"},
-        {"gnutls", {"GnuTLS "}, R"(GnuTLS (\d+\.\d+\.\d+))", "gnu", "gnutls"},
+        {"mbedtls", {"mbed TLS "}, R"(mbed TLS (\d+\.\d+\.\d+))", "arm", "mbed_tls", true},
+        {"gnutls", {"GnuTLS "}, R"(GnuTLS (\d+\.\d+\.\d+))", "gnu", "gnutls", true},
         // OpenVPN prints one version banner ("OpenVPN 2.4.7 arm-... [SSL (OpenSSL)]").
-        {"openvpn", {"OpenVPN "}, R"(OpenVPN (\d+\.\d+\.\d+))", "openvpn", "openvpn"},
+        {"openvpn", {"OpenVPN "}, R"(OpenVPN (\d+\.\d+\.\d+))", "openvpn", "openvpn", true},
         // Lua's LUA_RELEASE ("Lua 5.1.5") — require all three parts so the 2-part
         // LUA_VERSION ("Lua 5.1") in the same binary is not a second component.
         // Anchor "Lua 5." excludes LuaJIT ("LuaJIT 2.x").
-        {"lua", {"Lua 5."}, R"(Lua (5\.\d+\.\d+))", "lua", "lua"},
+        {"lua", {"Lua 5."}, R"(Lua (5\.\d+\.\d+))", "lua", "lua", true},
         // NOTE: no strongswan/expat banner rule — both embed symbol-version tables
         // (a full list of every release), the same trap that keeps OpenSSH out.
     };
@@ -194,21 +207,30 @@ std::vector<std::pair<std::string, std::string>> binver_cpe_products() {
     return out;
 }
 
-std::vector<Component> scan_binver(std::span<const uint8_t> data, const std::string& origin_path) {
+std::vector<Component> scan_binver(std::span<const uint8_t> data, const std::string& origin_path,
+                                   bool scan_nonelf) {
     std::vector<Component> out;
-    if (!is_elf(data)) return out;
+    const bool elf = is_elf(data);
+    // ELF input scans the full table (unchanged). Non-ELF input is scanned only
+    // when the caller allows it (a monolithic tree) and then only with the
+    // raw_safe signatures; otherwise it is skipped as before.
+    if (!elf && !scan_nonelf) return out;
 
     const auto& S = sigs();
     const auto& RE = compiled();
 
-    // One automaton over all anchors; anchor id -> sig index.
+    // One automaton over all active anchors; anchor id -> sig index. On non-ELF
+    // bytes, only the raw_safe signatures are armed.
     AhoCorasick ac;
     std::vector<uint32_t> id_to_sig;
-    for (uint32_t si = 0; si < S.size(); ++si)
+    for (uint32_t si = 0; si < S.size(); ++si) {
+        if (!elf && !S[si].raw_safe) continue;
         for (const auto& a : S[si].anchors) {
             ac.add(std::vector<uint8_t>(a.begin(), a.end()), static_cast<uint32_t>(id_to_sig.size()));
             id_to_sig.push_back(si);
         }
+    }
+    if (id_to_sig.empty()) return out;  // nothing armed (non-ELF with no raw_safe sig)
     ac.build();
 
     // Bounded window for the regex (M3): version banners are short.

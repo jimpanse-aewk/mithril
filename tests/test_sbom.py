@@ -146,10 +146,67 @@ def main():
             print(f"FAIL: u-boot precision: expected ['2019.04'], got {ub}")
             fails += 1
 
+        # --- monolithic non-ELF firmware (binver raw-bytes scan) ---
+        # A proprietary-OS / RTOS image is one statically-linked non-ELF blob with
+        # no ELF member and no package DB. binver recovers its banners only when the
+        # whole tree is monolithic (no ELF anywhere), so filesystem images are
+        # untouched. Each case gets its own directory so the no-ELF condition holds.
+        def mono_dir(name, body):
+            p = os.path.join(d, name)
+            os.makedirs(p, exist_ok=True)
+            with open(os.path.join(p, "fw.bin"), "wb") as f:
+                f.write(body)
+            return p
+
+        def ossl_bb(rep, tree):
+            return (sorted(c["version"] for c in rep.get("components", []) if c["name"] == "openssl"),
+                    sorted(c["version"] for c in rep.get("components", []) if c["name"] == "busybox"))
+
+        # 1) Monolithic tree with clean banners -> recovered.
+        mono = mono_dir("mono", b"rtos image \x01\x02 BusyBox v1.31.1 junk "
+                                b"OpenSSL 0.9.7b 10 Apr 2003 \xaa\xbb end")
+        r = json.loads(subprocess.check_output([binary, "-j", "--sbom", mono],
+                                                stderr=subprocess.DEVNULL))
+        if ossl_bb(r, mono) != (["0.9.7b"], ["1.31.1"]):
+            print(f"FAIL: monolithic recovery: expected openssl 0.9.7b + busybox 1.31.1, "
+                  f"got {ossl_bb(r, mono)}")
+            fails += 1
+
+        # 2) The SAME blob next to an ELF (a filesystem tree) is NOT raw-scanned:
+        #    only the ELF's banner is reported, so filesystem images are unchanged.
+        mixed = mono_dir("mixed", b"rtos image BusyBox v1.31.1 OpenSSL 0.9.7b 10 Apr 2003 end")
+        with open(os.path.join(mixed, "prog"), "wb") as f:
+            f.write(elf + b" realbox BusyBox v1.36.0 x")
+        r = json.loads(subprocess.check_output([binary, "-j", "--sbom", mixed],
+                                                stderr=subprocess.DEVNULL))
+        if ossl_bb(r, mixed) != ([], ["1.36.0"]):
+            print(f"FAIL: ELF-present tree must skip the raw blob: expected busybox 1.36.0 only, "
+                  f"got {ossl_bb(r, mixed)}")
+            fails += 1
+
+        # 3) A corrupted build-date banner stays rejected (strict issue-#7 pattern).
+        bad = mono_dir("mono_bad", b"blob OpenSSL 0.9.7b 10 Apr 200\x228 more")
+        r = json.loads(subprocess.check_output([binary, "-j", "--sbom", bad],
+                                                stderr=subprocess.DEVNULL))
+        if any(c["name"] == "openssl" for c in r.get("components", [])):
+            print("FAIL: malformed openssl date must not be emitted on the raw path")
+            fails += 1
+
+        # 4) zlib's ordinary-word anchors stay ELF-gated (raw_safe=False), so a
+        #    monolithic blob does not get a zlib component from "inflate X.Y.Z".
+        zl = mono_dir("mono_zlib", b"payload inflate 1.2.11 Copyright 1995 blah")
+        r = json.loads(subprocess.check_output([binary, "-j", "--sbom", zl],
+                                                stderr=subprocess.DEVNULL))
+        if any(c["name"] == "zlib" for c in r.get("components", [])):
+            print("FAIL: zlib must stay ELF-gated on the raw path")
+            fails += 1
+
         if fails == 0:
             print(f"PASS: {len(names)} components (not-installed excluded), "
                   f"CycloneDX + SPDX emitted and consistent; binary-version precision "
-                  f"(issue #7) rejects requirement/dev/tool strings, keeps real banners")
+                  f"(issue #7) rejects requirement/dev/tool strings, keeps real banners; "
+                  f"monolithic non-ELF image recovered (busybox+openssl), filesystem trees "
+                  f"and malformed/zlib banners unaffected")
             return 0
         return 1
 

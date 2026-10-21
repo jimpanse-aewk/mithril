@@ -17,6 +17,10 @@ Sources (all public):
   vagrant/vagrant.pub    HashiCorp Vagrant insecure key (private key published
                          in the vagrant repo); shipped as an authorized key on
                          countless dev boxes and some appliances.
+  emudhra/*.crt          Real public CT-logged eMudhra intermediate CA certs whose
+                         P-384 keys were generated with a broken RNG (tiny private
+                         scalars 4..237, recoverable); the Oct 2026 CA compromise.
+                         Fingerprinted by fp_der (SHA-256[0:32] of the cert DER).
 
 Two fingerprints per key (see keycorpus.hpp):
   fp_ssh   SHA-256[0:32] of the raw OpenSSH public-key blob (exact-key match).
@@ -122,6 +126,29 @@ def collect():
             add(fp(blob), label, ref, use)
             if modn:
                 add(fp(modn), label + " [modulus]", ref, use)
+
+    # eMudhra intermediate CAs with compromised keys (October 2026). These P-384
+    # certificates were generated with a broken RNG that produced tiny private
+    # scalars (4..237), so the private key is trivially recoverable from the public
+    # cert. The vendored .crt files are the real, public CT-logged certificates
+    # (SHA-256 fingerprints verified against Mozilla bug 2083449). Fingerprinted by
+    # fp_der (SHA-256[0:32] of the cert DER) so an exact match on a bundled trust
+    # store is named here; the general ec-small-scalar check catches the key in any
+    # cert wrapper (e.g. the Sectigo cross-signs) independently.
+    EMUDHRA_CN = {
+        "EMEVTLSCAG3B": "EM EV TLS CA - G3B", "EMOVTLSCAG3B": "EM OV TLS CA - G3B",
+        "EMDVTLSCAG3B": "EM DV TLS CA - G3B", "EMEVTLSCAG3C": "EM EV TLS CA - G3C",
+        "EMOVTLSCAG3C": "EM OV TLS CA - G3C", "EMDVTLSCAG3C": "EM DV TLS CA - G3C",
+        "EMOVCSCAG3B": "EM OV CS CA - G3B", "EMOVCSCAG3C": "EM OV CS CA - G3C",
+    }
+    ed = os.path.join(DATA, "emudhra")
+    for name in sorted(os.listdir(ed)) if os.path.isdir(ed) else []:
+        if not name.endswith(".crt"):
+            continue
+        der = open(os.path.join(ed, name), "rb").read()
+        cn = EMUDHRA_CN.get(name[:-4], name[:-4])
+        label = "eMudhra %s intermediate (compromised; recoverable P-384 key)" % cn
+        add(fp(der), label, "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", "")
 
     # Vagrant insecure key (authorized)
     vd = os.path.join(DATA, "vagrant")

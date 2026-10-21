@@ -39,6 +39,10 @@ struct PublicKey {
     std::vector<uint8_t> e_be;  // RSA public exponent, big-endian, minimal (may be large)
     uint64_t e = 0;           // RSA public exponent as u64 (0 if it does not fit / non-RSA)
 
+    // EC public point Q (affine, big-endian), set for an uncompressed EC key on a
+    // curve we recognize. Empty for non-EC keys or an unparsed/compressed point.
+    std::vector<uint8_t> ec_x, ec_y;
+
     KeyOrigin origin = KeyOrigin::PublicKeyInfo;
     size_t offset = 0;       // byte offset of the key within its file
 

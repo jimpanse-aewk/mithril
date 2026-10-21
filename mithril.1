@@ -78,8 +78,11 @@ Identify open-source licenses.
 Boot-security intel: U-Boot environment, device tree, and FIT/AVB/UEFI verified-boot posture.
 .TP
 .B \-\-keys
-Public-key weakness: keys whose private half is public (hardcoded/default keys),
-the ROCA fingerprint (CVE-2017-15361), and undersized or broken RSA keys.
+Public-key weakness: keys whose private half is public (hardcoded/default keys,
+the compromised eMudhra intermediate CAs), the ROCA fingerprint (CVE-2017-15361),
+undersized or broken RSA keys, RSA factoring recoveries (Fermat/batch-GCD/Wiener),
+and near-zero EC private scalars recovered by a bounded search (the Oct 2026
+eMudhra P-384 compromise).
 .TP
 .BR \-A ", " \-\-all
 Run every pass. This is the default when no pass is named.

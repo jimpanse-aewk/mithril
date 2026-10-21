@@ -103,6 +103,70 @@ def _next_prime(n):
     return n
 
 
+# --- EC small-scalar fixtures (the Oct 2026 eMudhra failure class) -----------
+# Minimal pure-Python EC over the four curves mithril carries, to synthesize a
+# public key Q = d*G for a tiny private scalar d and wrap it in a DER SPKI. No key
+# material is committed; the points are computed at test time.
+EC_CURVES = {
+    # name: (p, a, b, Gx, Gy, curve_oid_der_hex, field_bytes)
+    "prime256v1": (0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff, None,
+        0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b,
+        0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296,
+        0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5, "06082a8648ce3d030107", 32),
+    "secp384r1": (0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff, None,
+        0xb3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef,
+        0xaa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7,
+        0x3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f, "06052b81040022", 48),
+    "secp521r1": ((1 << 521) - 1, None,
+        0x0051953eb9618e1c9a1f929a21a0b68540eea2da725b99b315f3b8b489918ef109e156193951ec7e937b1652c0bd3bb1bf073573df883d2c34f1ef451fd46b503f00,
+        0x00c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66,
+        0x011839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650, "06052b81040023", 66),
+    "secp256k1": (0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f, 0, 7,
+        0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+        0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8, "06052b8104000a", 32),
+}
+
+
+def ec_mul(name, k):
+    p, a, b, gx, gy, _oid, _fb = EC_CURVES[name]
+    if a is None:
+        a = p - 3
+    def inv(x):
+        return pow(x, p - 2, p)
+    def add(P, Q):
+        if P is None:
+            return Q
+        if Q is None:
+            return P
+        x1, y1 = P
+        x2, y2 = Q
+        if x1 == x2 and (y1 + y2) % p == 0:
+            return None
+        lam = ((3 * x1 * x1 + a) * inv(2 * y1) if P == Q else (y2 - y1) * inv((x2 - x1) % p)) % p
+        x3 = (lam * lam - x1 - x2) % p
+        return (x3, (lam * (x1 - x3) - y1) % p)
+    R = None
+    P = (gx, gy)
+    while k:
+        if k & 1:
+            R = add(R, P)
+        P = add(P, P)
+        k >>= 1
+    return R
+
+
+def ec_spki_der(name, d):
+    """DER SubjectPublicKeyInfo for Q = d*G on `name`."""
+    p, a, b, gx, gy, oid, fb = EC_CURVES[name]
+    x, y = ec_mul(name, d)
+    point = b"\x04" + x.to_bytes(fb, "big") + y.to_bytes(fb, "big")
+    algid = b"\x30" + der_len(9 + len(bytes.fromhex(oid))) + \
+        bytes.fromhex("06072a8648ce3d0201") + bytes.fromhex(oid)
+    bitstr = b"\x03" + der_len(len(point) + 1) + b"\x00" + point
+    body = algid + bitstr
+    return b"\x30" + der_len(len(body)) + body
+
+
 def make_roca_modulus():
     """N with n mod p inside <65537 mod p> for every ROCA prime, ~2048-bit."""
     from math import prod
@@ -178,8 +242,41 @@ def main():
         open(os.path.join(tree, "root", "gcd_b_pub.pem"), "w").write(
             rsa_pub_pem(sp * _gen_prime(512)))
 
+        # --- GENERATION (EC small-scalar: the eMudhra Oct 2026 failure class) ---
+        # Q = d*G for a tiny d on each carried curve; the search must recover d.
+        os.makedirs(os.path.join(tree, "etc", "ssl", "ec"))
+        ec_expected = {}  # filename -> (curve, d)
+        for name in EC_CURVES:
+            for dd in (1, 5, 255):
+                fn = f"ec_{name}_d{dd}.der"
+                open(os.path.join(tree, "etc", "ssl", "ec", fn), "wb").write(ec_spki_der(name, dd))
+                ec_expected[fn] = (name, dd)
+
+        # --- Real eMudhra intermediates (vendored, public): all 8 are weak P-384
+        #     keys, each must be flagged ec-small-scalar AND named via the corpus.
+        emudhra_dir = os.path.join(CORPUS, "emudhra")
+        emudhra_scalars = {  # the published private scalars (verified by recovery)
+            "EMOVTLSCAG3C": 4, "EMEVTLSCAG3C": 56, "EMOVCSCAG3B": 66, "EMEVTLSCAG3B": 115,
+            "EMOVTLSCAG3B": 155, "EMDVTLSCAG3B": 156, "EMDVTLSCAG3C": 230, "EMOVCSCAG3C": 237,
+        }
+        have_emudhra = os.path.isdir(emudhra_dir)
+        if have_emudhra:
+            os.makedirs(os.path.join(tree, "etc", "ssl", "emudhra"))
+            for cn in os.listdir(emudhra_dir):
+                if cn.endswith(".crt"):
+                    shutil.copy(os.path.join(emudhra_dir, cn),
+                                os.path.join(tree, "etc", "ssl", "emudhra", cn))
+
         # --- STRUCTURAL + false-positive fixtures (openssl) ---
         if have_openssl:
+            # Healthy EC keys (real random scalars) -> must be silent (FP guard).
+            for cname in ("prime256v1", "secp384r1"):
+                subprocess.run(["openssl", "ecparam", "-name", cname, "-genkey", "-noout",
+                                "-out", "ec_priv.pem"], cwd=d,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["openssl", "ec", "-in", "ec_priv.pem", "-pubout",
+                                "-out", os.path.join(tree, "etc", "ssl", "ec", f"healthy_{cname}.pem")],
+                               cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             def genrsa(bits, path):
                 p = subprocess.run(["openssl", "genrsa", str(bits)], cwd=d,
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -293,6 +390,49 @@ def main():
                 print("FAIL: weak key inside an EFI_SIGNATURE_LIST not flagged (unwrap failed)")
                 fails += 1
 
+        # --- EC small-scalar assertions ---
+        import re as _re
+        ess = by_type.get("ec-small-scalar", [])
+        def recovered_d(h):
+            m = _re.search(r"d=(\d+)", h.get("evidence", ""))
+            return int(m.group(1)) if m else None
+        # Synthetic Q = d*G on each curve: recovered d must match, tier validated.
+        for fn, (cname, dd) in ec_expected.items():
+            hit = next((h for h in ess if h["path"].endswith(fn)), None)
+            if not hit:
+                print(f"FAIL: {fn} ({cname} d={dd}) not flagged ec-small-scalar")
+                fails += 1
+            elif recovered_d(hit) != dd:
+                print(f"FAIL: {fn} recovered d={recovered_d(hit)} != {dd}")
+                fails += 1
+            elif hit.get("confidence_tier") != "validated":
+                print(f"FAIL: {fn} ec-small-scalar tier {hit.get('confidence_tier')} != validated")
+                fails += 1
+        # Healthy EC keys (openssl) must be silent — the false-positive guard.
+        if have_openssl:
+            for bad in ("healthy_prime256v1.pem", "healthy_secp384r1.pem"):
+                hits = [h for h in kw if h["path"].endswith(bad)]
+                if hits:
+                    print(f"FAIL: EC false positive on {bad}: {[h['type'] for h in hits]}")
+                    fails += len(hits)
+        # Real eMudhra intermediates: every one flagged, with the right scalar, and
+        # also named by the leaked-key corpus (identity + mechanism).
+        if have_emudhra:
+            leaked = by_type.get("leaked-key", [])
+            for cn, scalar in emudhra_scalars.items():
+                fn = cn + ".crt"
+                hit = next((h for h in ess if h["path"].endswith(fn)), None)
+                if not hit:
+                    print(f"FAIL: eMudhra {cn} not flagged ec-small-scalar")
+                    fails += 1
+                elif recovered_d(hit) != scalar:
+                    print(f"FAIL: eMudhra {cn} recovered d={recovered_d(hit)} != {scalar}")
+                    fails += 1
+                if not any(h["path"].endswith(fn) and "emudhra" in h["label"].lower()
+                           for h in leaked):
+                    print(f"FAIL: eMudhra {cn} not named by the leaked-key corpus")
+                    fails += 1
+
         # --- crash safety: truncations + mutations in the tree, must not crash ---
         fuzz = os.path.join(tree, "fuzz")
         os.mkdir(fuzz)
@@ -314,8 +454,10 @@ def main():
         if fails == 0:
             n_leaked = len(leaked_expected)
             extra = "" if have_openssl else " (openssl absent: structural/FP skipped)"
+            em = ", 8 real eMudhra P-384 keys recovered" if have_emudhra else ""
             print(f"PASS: {n_leaked} leaked/default keys matched (host+authorized impact), "
-                  f"ROCA + Fermat + Wiener + batch-GCD recoveries detected, structural bands + "
+                  f"ROCA + Fermat + Wiener + batch-GCD recoveries detected, EC small-scalar "
+                  f"across 4 curves (synthetic{em}) + EC false-positive guard, structural bands + "
                   f"false-positive guard, crash-safe over truncations/mutations{extra}")
             return 0
         return 1

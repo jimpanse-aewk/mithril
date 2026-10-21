@@ -3,6 +3,7 @@
 
 #include <unordered_set>
 
+#include "ecc.hpp"
 #include "keycorpus.hpp"
 #include "keyweak.hpp"
 #include "pubkey.hpp"
@@ -10,6 +11,22 @@
 namespace ft {
 
 namespace {
+
+// Upper bound for the EC small-scalar search per key. The observed real-world
+// failure (eMudhra, Oct 2026) produced <= 8-bit scalars; 2^12 is a ~17x margin
+// over that. A scalar needs ~2^128 for any security, so this reaches only the
+// "broken RNG" floor; extending the reach cheaply (baby-step/giant-step is
+// O(sqrt(limit))) is future work.
+constexpr uint64_t kEcSmallScalarLimit = 1u << 12;
+
+// A healthy EC key's search walks the full range (a miss), so a file holding many
+// EC certs (a bundled CA trust store) could spend time proving negatives. The
+// budget below covers a normal trust store (~50 keys) at full reach; once spent,
+// later keys fall back to the floor, which still covers the known class (eMudhra
+// max scalar 237, so 512 keeps a >2x margin for every key in the file). This
+// bounds a pathological many-EC-cert file instead of letting it run unbounded.
+constexpr uint64_t kEcFileStepBudget = 200000;
+constexpr uint64_t kEcMinScan = 512;
 
 size_t bit_width_u64(uint64_t v) {
     size_t b = 0;
@@ -44,6 +61,8 @@ std::vector<Finding> scan_keys(const std::string& path, std::span<const uint8_t>
     // Dedup keys within the file (a cert matched as PEM and again as whole-file
     // DER, or the same host key in two files' worth of one buffer).
     std::unordered_set<std::string> seen;
+
+    uint64_t ec_budget = kEcFileStepBudget;  // shared EC search budget for this file
 
     for (const auto& k : keys) {
         std::string ident = k.fp_ssh + "|" + k.fp_der + "|" + k.fp_modn;
@@ -118,6 +137,33 @@ std::vector<Finding> scan_keys(const std::string& path, std::span<const uint8_t>
             }
 
             if (out_rsa) out_rsa->push_back(RsaKeyInfo{k.offset, k.n, k.e, k.bits});
+        }
+
+        // 6. EC small-scalar: a public point Q = d*G for a catastrophically small
+        //    private scalar d (broken RNG / near-zero key generation — the Oct 2026
+        //    eMudhra intermediate-CA compromise, P-384 scalars 4..237). A bounded
+        //    search recovers d; a legitimate scalar is astronomically larger than
+        //    the bound, so a hit is proof of a recoverable private key.
+        if (k.algo == "EC" && !k.ec_x.empty() && !k.ec_y.empty()) {
+            const EcCurve* c = ec_curve_by_name(k.curve);
+            // Only a well-formed affine point (coordinates exactly the field size)
+            // is analyzed; this also bounds the field arithmetic (a malformed
+            // oversized coordinate never reaches the reducer).
+            if (c && k.ec_x.size() <= c->field_bytes && k.ec_y.size() <= c->field_bytes) {
+                uint64_t lim = ec_budget >= kEcSmallScalarLimit ? kEcSmallScalarLimit
+                               : (ec_budget > kEcMinScan ? ec_budget : kEcMinScan);
+                ec_budget -= (ec_budget > lim) ? lim : ec_budget;
+                uint64_t d = 0;
+                if (ec_recover_small_scalar(*c, k.ec_x, k.ec_y, lim, d)) {
+                    out.push_back(mk("ec-small-scalar", "high", Confidence::Validated, kind,
+                                     "EC private scalar recovered by small-scalar search: d=" +
+                                         std::to_string(d) + " on " + c->name +
+                                         " (a real private key is ~" + std::to_string(k.bits) +
+                                         "-bit); the private key is trivially recoverable",
+                                     "CWE-320 (weak key generation; near-zero EC private scalar)",
+                                     k.offset));
+                }
+            }
         }
     }
     return out;

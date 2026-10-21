@@ -19,6 +19,7 @@
 #include "certid.hpp"
 #include "keycorpus.hpp"
 #include "keys.hpp"
+#include "ecc.hpp"
 #include "keyweak.hpp"
 #include "pubkey.hpp"
 #include "component.hpp"
@@ -1906,6 +1907,89 @@ static void test_keyweak() {
     }
 }
 
+static void test_ecc() {
+    using namespace ft;
+    auto hx = [](const char* h) {
+        std::vector<uint8_t> v;
+        for (const char* p = h; p[0] && p[1]; p += 2)
+            v.push_back(uint8_t((std::stoi(std::string(p, 2), nullptr, 16))));
+        return v;
+    };
+
+    // Curve lookup, including the OpenSSH/alias names.
+    CHECK(ec_curve_by_name("secp384r1") && ec_curve_by_name("secp384r1")->field_bytes == 48);
+    CHECK(ec_curve_by_name("nistp256") && ec_curve_by_name("nistp256")->name == "secp256r1");
+    CHECK(ec_curve_by_name("prime256v1") && ec_curve_by_name("prime256v1")->name == "secp256r1");
+    CHECK(ec_curve_by_name("secp521r1") && ec_curve_by_name("secp256k1"));
+    CHECK(ec_curve_by_name("brainpoolP256r1") == nullptr);  // unknown -> nullptr, no crash
+
+    // Known-answer small-scalar recovery, one per curve. The P-384 d=4 point is the
+    // REAL eMudhra "EM OV TLS CA - G3C" intermediate (Oct 2026 compromise); its
+    // public point is exactly 4*G, so the search must recover d=4.
+    struct Kat { const char* curve; uint64_t d; const char* x; const char* y; };
+    const Kat kats[] = {
+        {"secp256r1", 2,
+         "7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978",
+         "07775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1"},
+        {"secp384r1", 4,  // eMudhra EM OV TLS CA - G3C public point
+         "138251cd52ac9298c1c8aad977321deb97e709bd0b4ca0aca55dc8ad51dcfc9d1589a1597e3a5120e1efd631c63e1835",
+         "cacae29869a62e1631e8a28181ab56616dc45d918abc09f3ab0e63cf792aa4dced7387be37bba569549f1c02b270ed67"},
+        {"secp521r1", 2,
+         "00433c219024277e7e682fcb288148c282747403279b1ccc06352c6e5505d769be97b3b204da6ef55507aa104a3a35c5af41cf2fa364d60fd967f43e3933ba6d783d",
+         "00f4bb8cc7f86db26700a7f3eceeeed3f0b5c6b5107c4da97740ab21a29906c42dbbb3e377de9f251f6b93937fa99a3248f4eafcbe95edc0f4f71be356d661f41b02"},
+        {"secp256k1", 255,
+         "1b38903a43f7f114ed4500b4eac7083fdefece1cf29c63528d563446f972c180",
+         "4036edc931a60ae889353f77fd53de4a2708b26b6f5da72ad3394119daf408f9"},
+    };
+    for (const auto& kt : kats) {
+        const EcCurve* c = ec_curve_by_name(kt.curve);
+        CHECK(c != nullptr);
+        auto x = hx(kt.x), y = hx(kt.y);
+        CHECK(ec_point_on_curve(*c, x, y));
+        uint64_t d = 0;
+        CHECK(ec_recover_small_scalar(*c, x, y, 1u << 12, d) && d == kt.d);
+        // A limit below the true scalar must NOT find it (bounded, returns false).
+        uint64_t d2 = 0;
+        if (kt.d > 1) CHECK(!ec_recover_small_scalar(*c, x, y, kt.d - 1, d2));
+    }
+
+    // Tampered point (y+1) is off-curve -> on_curve false and no scalar recovered.
+    {
+        const EcCurve* c = ec_curve_by_name("secp256r1");
+        auto x = hx("7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978");
+        auto y = hx("07775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d2");  // ...d1 -> d2
+        CHECK(!ec_point_on_curve(*c, x, y));
+        uint64_t d = 0;
+        CHECK(!ec_recover_small_scalar(*c, x, y, 1u << 12, d));
+    }
+
+    // End to end through scan_keys: a DER SPKI holding a small-scalar P-256 point
+    // (the d=2 KAT) is parsed as EC with the point captured and flagged
+    // ec-small-scalar.
+    {
+        // SPKI = SEQ{ SEQ{ ecPublicKey, prime256v1 }, BIT STRING 00||04||X||Y }.
+        std::vector<uint8_t> der;
+        auto xk = hx("7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978");
+        auto yk = hx("07775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1");
+        std::vector<uint8_t> pt = {0x04};
+        pt.insert(pt.end(), xk.begin(), xk.end());
+        pt.insert(pt.end(), yk.begin(), yk.end());
+        // algId = SEQ{ OID ecPublicKey (1.2.840.10045.2.1), OID prime256v1 }
+        const uint8_t algid[] = {0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02,
+                                 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07};
+        std::vector<uint8_t> bits = {0x03, uint8_t(pt.size() + 1), 0x00};
+        bits.insert(bits.end(), pt.begin(), pt.end());
+        std::vector<uint8_t> body(algid, algid + sizeof(algid));
+        body.insert(body.end(), bits.begin(), bits.end());
+        der = {0x30, uint8_t(body.size())};
+        der.insert(der.end(), body.begin(), body.end());
+        auto pks = extract_public_keys(der);
+        CHECK(!pks.empty() && pks[0].algo == "EC" && pks[0].curve == "secp256r1" &&
+              pks[0].ec_x.size() == 32);
+        CHECK(has_type(scan_keys("k.der", der), "ec-small-scalar"));
+    }
+}
+
 int main() {
     test_ahocorasick();
     test_entropy();
@@ -1950,6 +2034,7 @@ int main() {
     test_boot();
     test_bigint();
     test_keyweak();
+    test_ecc();
     std::printf("unit: %d checks, %d failures\n", g_checks, g_fails);
     return g_fails ? 1 : 0;
 }

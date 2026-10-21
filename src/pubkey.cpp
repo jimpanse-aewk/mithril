@@ -137,6 +137,19 @@ bool parse_spki(std::span<const uint8_t> d, const Der& spki, PublicKey& k) {
         k.algo = "EC";
         auto params = der_at(d, oid->end);
         if (params && params->tag == 0x06) k.curve = curve_from_oid(d, *params);
+        // The BIT STRING holds the EC point: 1 unused-bits byte, then the point.
+        // Capture an uncompressed point (0x04 || X || Y, |X| == |Y|) so the
+        // key-weakness pass can run EC checks (small-scalar, on-curve).
+        size_t pstart = bitstr->body + 1, pend = bitstr->end;
+        if (pend > pstart && d[pstart] == 0x04) {
+            size_t plen = pend - pstart - 1;  // drop the 0x04 tag
+            if (plen >= 2 && (plen & 1) == 0) {
+                size_t flen = plen / 2;
+                k.ec_x.assign(d.begin() + pstart + 1, d.begin() + pstart + 1 + flen);
+                k.ec_y.assign(d.begin() + pstart + 1 + flen, d.begin() + pend);
+                k.bits = flen * 8;
+            }
+        }
         return true;
     }
     if (oid_eq(d, *oid, OID_DSA)) {
@@ -316,6 +329,14 @@ std::optional<PublicKey> parse_ssh_blob(std::span<const uint8_t> blob, size_t of
         k.algo = "EC";
         if (fields.size() >= 2)
             k.curve.assign(reinterpret_cast<const char*>(fields[1].data()), fields[1].size());
+        // fields[2] is the EC point Q (0x04 || X || Y for an uncompressed point).
+        if (fields.size() >= 3 && fields[2].size() >= 3 && fields[2][0] == 0x04 &&
+            ((fields[2].size() - 1) & 1) == 0) {
+            size_t flen = (fields[2].size() - 1) / 2;
+            k.ec_x.assign(fields[2].begin() + 1, fields[2].begin() + 1 + flen);
+            k.ec_y.assign(fields[2].begin() + 1 + flen, fields[2].end());
+            k.bits = flen * 8;
+        }
     } else {
         return std::nullopt;
     }

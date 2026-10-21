@@ -3,6 +3,14 @@
 // Regenerate after changing the vendored sources.
 
 inline constexpr KnownLeakedKey kLeakedKeys[] = {
+    {"42c4accd12c4f59597925e1a08a7a901", "eMudhra EM DV TLS CA - G3B intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
+    {"0164d7ceae5bb909c272af151ff44b11", "eMudhra EM DV TLS CA - G3C intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
+    {"e7568fe6e12331f4fd7de61da4c7559d", "eMudhra EM EV TLS CA - G3B intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
+    {"432ec25f0d28de9006d97bf752f17bbb", "eMudhra EM EV TLS CA - G3C intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
+    {"9e39de2881273acc225a149c72ba3e0f", "eMudhra EM OV CS CA - G3B intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
+    {"4b2460a466f95fd40113bcdcca2ceb29", "eMudhra EM OV CS CA - G3C intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
+    {"98b896625c0c230adeec3eb2cf6aad50", "eMudhra EM OV TLS CA - G3B intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
+    {"cb6e15165ac802e9b3f993f16c25d41f", "eMudhra EM OV TLS CA - G3C intermediate (compromised; recoverable P-384 key)", "Oct 2026 eMudhra CA compromise; Mozilla bug 2083449", ""},
     {"fc92e9eb3eae184dc13dcb3bd114286f", "array networks vapv vxag hardcoded authorized SSH key (DSA)", "rapid7/ssh-badkeys", "authorized"},
     {"c210cfdf18ca0447adb5b0ee79cc6d1a", "barracuda load balancer vm hardcoded authorized SSH key (DSA)", "rapid7/ssh-badkeys; CVE-2014-8428", "authorized"},
     {"67eab85e14b0598eead0120354f475bf", "ceragon fibeair cve 2015 0936 hardcoded authorized SSH key (RSA)", "rapid7/ssh-badkeys; CVE-2015-0936", "authorized"},

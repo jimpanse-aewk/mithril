@@ -18,6 +18,11 @@ Public keys whose private half is public, fingerprinted into `src/keycorpus_corp
 - **HashiCorp Vagrant insecure key** — `data/keycorpus/vagrant/vagrant.pub`. The default "insecure" key
   Vagrant ships as an authorized key; its private half is published in the vagrant repo.
   License: MIT (HashiCorp). Source: <https://github.com/hashicorp/vagrant> (`keys/`).
+- **eMudhra compromised intermediate CAs (October 2026)** — `data/keycorpus/emudhra/*.crt`. The eight
+  eMudhra P-384 intermediate CA certificates whose private keys were generated with a broken RNG (tiny
+  scalars 4–237) and are trivially recoverable. These are the real, public, Certificate-Transparency-logged
+  certificates; their SHA-256 fingerprints were verified against the Mozilla incident bug before vendoring.
+  Public certificates only (no private keys). Source: Mozilla bug 2083449 / CT logs.
 
 ## Boot-key corpus — `data/bootkeys/`
 

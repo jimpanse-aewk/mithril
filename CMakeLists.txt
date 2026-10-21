@@ -55,6 +55,7 @@ add_executable(mithril
   src/certid.cpp
   src/pubkey.cpp
   src/bigint.cpp
+  src/ecc.cpp
   src/keyweak.cpp
   src/keycorpus.cpp
   src/keys.cpp
@@ -102,6 +103,7 @@ add_executable(mithril_unit
   src/certid.cpp
   src/pubkey.cpp
   src/bigint.cpp
+  src/ecc.cpp
   src/keyweak.cpp
   src/keycorpus.cpp
   src/keys.cpp

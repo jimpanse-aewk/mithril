@@ -6,7 +6,9 @@
 // Build (from the mithril dir):
 //   clang++ -std=c++20 -O1 -g -fsanitize=fuzzer,address -I src \
 //     src/ahocorasick.cpp src/validators.cpp src/rules_builtin.cpp src/engine.cpp \
-//     src/sbom.cpp fuzz/fuzz_secrets.cpp -o fuzz/fuzz_secrets
+//     src/sbom.cpp src/pubkey.cpp src/certid.cpp src/bigint.cpp src/ecc.cpp \
+//     src/keyweak.cpp src/keycorpus.cpp src/keys.cpp src/sha256.cpp \
+//     fuzz/fuzz_secrets.cpp -o fuzz/fuzz_secrets
 // Run: ./fuzz/fuzz_secrets -max_total_time=60
 #include <cstddef>
 #include <cstdint>

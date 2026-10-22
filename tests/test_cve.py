@@ -157,13 +157,13 @@ def main():
         if "CVE-2099-0002" not in h:
             print(f"FAIL: real-impact CVE should survive the EPSS arm:\n{h}")
             fails += 1
-        if "--component-cves-all" not in h:
-            print(f"FAIL: gated human view should point to --component-cves-all:\n{h}")
+        if "--component-cves-full" not in h:
+            print(f"FAIL: gated human view should point to --component-cves-full:\n{h}")
             fails += 1
-        # --component-cves-all lists every CVE, with no gate banner or footer.
-        hall = run_human(binary, os.path.join(d, "vuln"), dbdir, ["--component-cves-all"])
+        # --component-cves-full lists every CVE, with no gate banner or footer.
+        hall = run_human(binary, os.path.join(d, "vuln"), dbdir, ["--component-cves-full"])
         if "CVE-2021-28831" not in hall or "CVE-2099-0002" not in hall or "hidden" in hall:
-            print(f"FAIL: --component-cves-all should list every CVE:\n{hall}")
+            print(f"FAIL: --component-cves-full should list every CVE:\n{hall}")
             fails += 1
 
         # No local mirror: a non-interactive --cve run must not prompt (stdin is
@@ -193,7 +193,7 @@ def main():
             print("PASS: vulnerable busybox flagged CVE-2021-28831 (severity+basis), "
                   "patched clean, NVD/CPE join flagged openssl 1.1.1m, "
                   "human view gates to foothold-worthy (hard High/Critical floor; remote DoS "
-                  "kept only when trending; --component-cves-all opts out)")
+                  "kept only when trending; --component-cves-full opts out)")
             return 0
         return 1
 

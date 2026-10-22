@@ -57,9 +57,9 @@ struct Report {
     std::vector<Hit> notable;          // path-rule hits (credential/crypto/config files)
     std::vector<Component> components;  // SBOM components (dpkg/opkg/apk/...)
     std::vector<CveMatch> cves;         // SBOM-vs-OSV join results
-    std::vector<KernelCveResult> kernel_cves;  // curated checklist (+ feed if --kernel-cves-all)
-    bool kernel_cves_full = false;      // --kernel-cves-all: the kernel.org feed was merged in
-    bool component_cves_all = false;    // --component-cves-all: show every component CVE in human view
+    std::vector<KernelCveResult> kernel_cves;  // curated checklist (+ feed if --kernel-cves-full)
+    bool kernel_cves_full = false;      // --kernel-cves-full: the kernel.org feed was merged in
+    bool component_cves_all = false;    // --component-cves-full: show every component CVE in human view
     std::vector<Hit> licenses;          // license findings (SPDX tags + license files)
     std::vector<Hit> boot;              // boot-security findings (U-Boot env, DTB/FIT)
     std::vector<Hit> keys;              // key-weakness findings (leaked/ROCA/weak public keys)

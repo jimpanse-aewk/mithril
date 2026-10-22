@@ -67,6 +67,8 @@ void print_help(std::FILE* out, const char* prog, bool color) {
                  "      --fetch-db      Download a prebuilt CVE mirror, then exit\n"
                  "      --update-db     Rebuild the local CVE mirror from source, then exit\n"
                  "      --with-kernel-feed  With --fetch-db/--update-db, also get the kernel feed\n"
+                 "      --no-fetch      Never offer to download the CVE mirror (for scripts/CI;\n"
+                 "                      env: MITHRIL_NO_FETCH). A missing mirror then just errors.\n"
                  "  -C, --outdir <DIR>  Write the JSON report to DIR/mithril-report.json\n"
                  "      --dump-kconfig  Print the recovered kernel .config to stdout, then exit\n"
                  "      --threads <N>   Worker threads for tree scans (default: auto)\n"
@@ -101,6 +103,7 @@ int main(int argc, char** argv) {
     bool license_paths = false;
     bool verbose = false;
     bool with_kernel_feed = false;
+    bool no_fetch = false;
     Passes passes;
     bool have_path = false;
     bool end_of_opts = false;
@@ -157,6 +160,8 @@ int main(int argc, char** argv) {
             verbose = true;
         } else if (!end_of_opts && std::strcmp(a, "--with-kernel-feed") == 0) {
             with_kernel_feed = true;
+        } else if (!end_of_opts && std::strcmp(a, "--no-fetch") == 0) {
+            no_fetch = true;
         } else if (!end_of_opts && std::strcmp(a, "--rules") == 0 && i + 1 < argc) {
             rules_cli = argv[++i];
         } else if (!end_of_opts && std::strcmp(a, "--threads") == 0 && i + 1 < argc) {
@@ -232,6 +237,50 @@ int main(int argc, char** argv) {
         }
         // User content/path rules ride the secrets pass's engine; make sure it runs.
         if (!user.content.empty() || !user.paths.empty()) impl.secrets = true;
+    }
+
+    // MITHRIL_NO_FETCH (any non-empty value) is the env twin of --no-fetch: it
+    // keeps a CVE scan from ever prompting, for scripts and CI that set it once.
+    if (const char* nf = std::getenv("MITHRIL_NO_FETCH"); nf && *nf) no_fetch = true;
+
+    // The CVE pass needs a local mirror. If it will run but no mirror is present,
+    // offer to fetch it now -- but only for an interactive terminal (real stdin
+    // and stderr TTYs, human output). A non-interactive run (pipe, CI, -j), or
+    // --no-fetch / MITHRIL_NO_FETCH, never prompts: the missing-mirror error and
+    // nonzero exit are left to the CVE block further down. Prompting here, before
+    // the scan, means a "yes" has the mirror ready for the join and the operator
+    // is not asked a question after a long scan has already run.
+    if (impl.cve && !no_fetch && !dump_kconfig) {
+        std::error_code mec;
+        bool have_mirror = std::filesystem::exists(osv_index_path(), mec) ||
+                           std::filesystem::exists(nvd_index_path(), mec);
+        bool interactive = isatty(fileno(stdin)) && isatty(fileno(stderr)) && !json_out;
+        if (!have_mirror && interactive) {
+            std::fprintf(stderr,
+                         "%s: no local CVE mirror found (the --cve pass needs one).\n"
+                         "Download it now? [Y/n] ",
+                         prog);
+            std::fflush(stderr);
+            char buf[16] = {0};
+            bool yes = true;  // empty line (bare Enter) accepts the default
+            if (std::fgets(buf, sizeof(buf), stdin))
+                yes = (buf[0] == '\n' || buf[0] == 'y' || buf[0] == 'Y');
+            else
+                yes = false;  // EOF on stdin: treat as decline, do not hang
+            if (yes) {
+                std::string err;
+                std::fprintf(stderr, "Fetching CVE mirror (this runs once)...\n");
+                if (cve_fetch(err, with_kernel_feed) != 0)
+                    // Leave impl.cve set: the CVE block below reports the mirror
+                    // still missing and exits nonzero, as a failed fetch should.
+                    std::fprintf(stderr, "%s: --fetch-db: %s\n", prog, err.c_str());
+            } else {
+                // Declined: drop the CVE pass so the rest of the scan finishes
+                // and the run exits 0. The operator made the choice.
+                impl.cve = passes.cve = false;
+                std::fprintf(stderr, "%s: skipping the CVE pass (no mirror).\n", prog);
+            }
+        }
     }
 
     Report rep = scan_path(path, impl, threads, user.content, user.paths);

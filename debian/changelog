@@ -1,3 +1,20 @@
+mithril (0.4.0-1) unstable; urgency=medium
+
+  * --keys: recover near-zero EC private scalars by a bounded d*G==Q search,
+    detecting the October 2026 eMudhra P-384 CA compromise (P-256/384/521 and
+    secp256k1); the eight real eMudhra intermediates are fingerprinted.
+  * --cve: on an interactive terminal with no local mirror, offer to download
+    it before scanning. New --no-fetch (and MITHRIL_NO_FETCH) suppress the
+    offer; non-interactive runs still error as before.
+  * CLI: breaking flag renames for coherence. --component-cves-all is now
+    --component-cves-full and --kernel-cves-all is now --kernel-cves-full
+    ("all" means all passes; "full" means all detail within a pass). New --full
+    for maximum human detail. --help is regrouped; JSON is always complete.
+  * SBOM: recover components from monolithic non-ELF firmware. Document that
+    -C/--outdir also writes sbom.cdx.json and sbom.spdx.json.
+
+ -- Matt Brown <matt@brownfinesecurity.com>  Thu, 22 Oct 2026 15:09:46 -0400
+
 mithril (0.3.0-1) unstable; urgency=medium
 
   * New --boot Boot Security pass: U-Boot env, device tree, and FIT posture.

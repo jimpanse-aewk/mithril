@@ -227,7 +227,7 @@ std::string emit_report_json(const Report& rep, const Passes& passes) {
                    "(real-C/I-impact OR remote-DoS with epss>=0.70))", sf);
             kv_str(o, "note",
                    "the \"cves\" array is complete; \"high_signal\" is the count shown in "
-                   "the default human view; run --component-cves-all to list all in human output",
+                   "the default human view; run --component-cves-full to list all in human output",
                    sf);
             o += "}";
         }
@@ -293,7 +293,7 @@ std::string emit_report_json(const Report& rep, const Passes& passes) {
                        ? "curated entries are kconfig-gated; feed entries (source "
                          "\"kernel.org\") are version-matched, confirm the backport"
                        : "curated high-signal set of widely-exploited kernel bugs, not every "
-                         "CVE affecting this version; run --kernel-cves-all for the full feed",
+                         "CVE affecting this version; run --kernel-cves-full for the full feed",
                    sf);
             o += "}";
         }

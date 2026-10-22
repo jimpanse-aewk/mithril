@@ -36,7 +36,7 @@ struct KernelCveResult {
     bool applicable = true;  // == (state == Applicable); kept for existing callers
     std::string reason;      // why applicable/ruled-out/unknown, with the evidence source
     // Where this result came from: "curated" (the built-in high-signal table) or
-    // "kernel.org" (the full version-matched feed, only with --kernel-cves-all).
+    // "kernel.org" (the full version-matched feed, only with --kernel-cves-full).
     std::string source = "curated";
     // Value-add annotations (never affect applicability):
     bool kev = false;        // on the CISA Known-Exploited catalog

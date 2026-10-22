@@ -46,30 +46,38 @@ void print_help(std::FILE* out, const char* prog, bool color) {
     std::fprintf(out, "Analyze software contents: secrets, components (SBOM), CVEs, licenses.\n\n");
     std::fprintf(out, "%sUSAGE%s\n", B, R);
     std::fprintf(out, "  %s [options] <file|dir>\n\n", prog);
-    std::fprintf(out, "%sOPTIONS%s\n", B, R);
+    std::fprintf(out, "%sPASSES%s  (with none named, every pass runs)\n", B, R);
     std::fprintf(out,
-                 "  -j, --json          JSON output (default: human-readable)\n"
-                 "  -v, --verbose       Human output: show full values (no \"...\" truncation)\n"
                  "      --secrets       Scan file content for credential/key material\n"
                  "      --sbom          Inventory software components and versions\n"
                  "      --cve           Match components against known vulnerabilities\n"
                  "      --licenses      Identify open-source licenses\n"
                  "      --boot          Boot-security intel: U-Boot env, device tree, FIT\n"
                  "      --keys          Public-key weakness: leaked/default keys, ROCA, weak RSA\n"
-                 "      --license-paths  List the file locations of each license, not just\n"
-                 "                       a count (human output; implies --licenses)\n"
-                 "  -A, --all           Run every pass (the default when none is selected)\n"
-                 "      --kernel-cves-all  List every CVE for the detected kernel version, not\n"
-                 "                         just the curated set (needs the kernel feed; implies --cve)\n"
-                 "      --component-cves-all  Human view: list every component CVE, not just the\n"
-                 "                         high-signal set (KEV / CVSS>=9.0 / EPSS>=0.10; implies --cve)\n"
-                 "      --rules <FILE>  Add user-defined rules from a JSON file\n"
+                 "  -A, --all           Run every pass (the explicit form of the default)\n\n");
+    std::fprintf(out, "%sOUTPUT%s\n", B, R);
+    std::fprintf(out,
+                 "  -j, --json          JSON instead of human-readable. JSON is ALWAYS\n"
+                 "                      complete; the flags below only expand the human view.\n"
+                 "  -v, --verbose       Show full values, no \"...\" truncation\n"
+                 "      --license-paths  List where each license was found (implies --licenses)\n"
+                 "      --component-cves-full  List every component CVE, not just the\n"
+                 "                      high-signal set (implies --cve)\n"
+                 "      --kernel-cves-full  List every CVE for the detected kernel version, not\n"
+                 "                      just the curated set (needs the kernel feed; implies --cve)\n"
+                 "      --full          Everything above at once (verbose + paths + both -cves-full)\n"
+                 "  -C, --outdir <DIR>  Also write the report to DIR: mithril-report.json, plus\n"
+                 "                      sbom.cdx.json and sbom.spdx.json when the SBOM pass runs\n\n");
+    std::fprintf(out, "%sCVE MIRROR%s\n", B, R);
+    std::fprintf(out,
                  "      --fetch-db      Download a prebuilt CVE mirror, then exit\n"
                  "      --update-db     Rebuild the local CVE mirror from source, then exit\n"
                  "      --with-kernel-feed  With --fetch-db/--update-db, also get the kernel feed\n"
-                 "      --no-fetch      Never offer to download the CVE mirror (for scripts/CI;\n"
-                 "                      env: MITHRIL_NO_FETCH). A missing mirror then just errors.\n"
-                 "  -C, --outdir <DIR>  Write the JSON report to DIR/mithril-report.json\n"
+                 "      --no-fetch      Never offer to download the mirror (for scripts/CI;\n"
+                 "                      env: MITHRIL_NO_FETCH). A missing mirror then just errors.\n\n");
+    std::fprintf(out, "%sOTHER%s\n", B, R);
+    std::fprintf(out,
+                 "      --rules <FILE>  Add user-defined rules from a JSON file\n"
                  "      --dump-kconfig  Print the recovered kernel .config to stdout, then exit\n"
                  "      --threads <N>   Worker threads for tree scans (default: auto)\n"
                  "  -h, --help          Print help\n"
@@ -78,10 +86,8 @@ void print_help(std::FILE* out, const char* prog, bool color) {
     std::fprintf(out,
                  "  %s ./rootfs/            Run every analysis on an unpacked tree\n"
                  "  %s --secrets ./rootfs/  Only the secrets pass\n"
-                 "  %s -j ./rootfs/         JSON for tools / LLMs\n\n",
+                 "  %s -j ./rootfs/         JSON for tools / LLMs\n",
                  prog, prog, prog);
-    std::fprintf(out, "Pipeline: moria -e firmware.bin  ->  mithril firmware.bin.extracted/\n");
-    std::fprintf(out, "Docs: README.md, docs/\n");
 }
 
 
@@ -150,14 +156,18 @@ int main(int argc, char** argv) {
             fetch_db = true;
         } else if (!end_of_opts && std::strcmp(a, "--dump-kconfig") == 0) {
             dump_kconfig = true;
-        } else if (!end_of_opts && std::strcmp(a, "--kernel-cves-all") == 0) {
+        } else if (!end_of_opts && std::strcmp(a, "--kernel-cves-full") == 0) {
             kernel_cves_all = true;
-        } else if (!end_of_opts && std::strcmp(a, "--component-cves-all") == 0) {
+        } else if (!end_of_opts && std::strcmp(a, "--component-cves-full") == 0) {
             component_cves_all = true;
         } else if (!end_of_opts && std::strcmp(a, "--license-paths") == 0) {
             license_paths = true;
         } else if (!end_of_opts && (std::strcmp(a, "-v") == 0 || std::strcmp(a, "--verbose") == 0)) {
             verbose = true;
+        } else if (!end_of_opts && std::strcmp(a, "--full") == 0) {
+            // One switch for maximum human detail: every "show more" knob at once.
+            // (JSON is already complete, so --full is a no-op there.)
+            verbose = component_cves_all = kernel_cves_all = license_paths = true;
         } else if (!end_of_opts && std::strcmp(a, "--with-kernel-feed") == 0) {
             with_kernel_feed = true;
         } else if (!end_of_opts && std::strcmp(a, "--no-fetch") == 0) {
@@ -203,7 +213,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // --kernel-cves-all / --component-cves-all are CVE-pass features; make sure
+    // --kernel-cves-full / --component-cves-full are CVE-pass features; make sure
     // that pass runs.
     if (kernel_cves_all) passes.cve = true;
     if (component_cves_all) passes.cve = true;
@@ -379,7 +389,7 @@ int main(int argc, char** argv) {
         // the OSV/NVD mirror — the table is built in).
         rep.kernel_cves = kernel_cve_scan(rep.kernel_version, &rep.kcv);
 
-        // --kernel-cves-all: also join the full kernel.org (Linux CNA) feed, the
+        // --kernel-cves-full: also join the full kernel.org (Linux CNA) feed, the
         // complete version-matched set. Merged in, deduped against the curated
         // entries (which keep their kconfig gating and exploit notes). Feed entries
         // are version-matched only (the feed carries no CONFIG data), so they are
@@ -387,7 +397,7 @@ int main(int argc, char** argv) {
         if (kernel_cves_all && !rep.kernel_version.empty()) {
             auto feed = load_kernel_feed(kernel_feed_path());
             if (!feed) {
-                std::string msg = std::string("--kernel-cves-all: no kernel CVE feed; run '") +
+                std::string msg = std::string("--kernel-cves-full: no kernel CVE feed; run '") +
                                   prog + " --fetch-db --with-kernel-feed' first";
                 rep.errors.emplace_back(std::string(), msg);
                 std::fprintf(stderr, "%s: %s\n", prog, msg.c_str());

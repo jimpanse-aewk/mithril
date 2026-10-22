@@ -166,6 +166,29 @@ def main():
             print(f"FAIL: --component-cves-all should list every CVE:\n{hall}")
             fails += 1
 
+        # No local mirror: a non-interactive --cve run must not prompt (stdin is
+        # not a TTY under subprocess), must name the missing DB, and must exit 1.
+        # This holds plain, with -j, and with --no-fetch. The interactive
+        # download prompt is TTY-only and is not exercised here.
+        emptydb = os.path.join(d, "emptydb")
+        os.makedirs(emptydb)
+        for extra in ([], ["-j"], ["--no-fetch"]):
+            env = dict(os.environ, MITHRIL_DB=emptydb, NO_COLOR="1")
+            p = subprocess.run([binary, "--cve", os.path.join(d, "vuln")] + extra,
+                               env=env, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            err = p.stderr.decode()
+            label = " ".join(extra) or "(plain)"
+            if p.returncode != 1:
+                print(f"FAIL: --cve {label} with no mirror should exit 1, got {p.returncode}")
+                fails += 1
+            if "no local vuln DB" not in err:
+                print(f"FAIL: --cve {label} with no mirror should name the missing DB:\n{err}")
+                fails += 1
+            if "Download it now" in err:
+                print(f"FAIL: non-interactive --cve {label} must not prompt:\n{err}")
+                fails += 1
+
         if fails == 0:
             print("PASS: vulnerable busybox flagged CVE-2021-28831 (severity+basis), "
                   "patched clean, NVD/CPE join flagged openssl 1.1.1m, "

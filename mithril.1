@@ -139,6 +139,18 @@ or
 .BR \-\-update\-db ,
 also fetch the optional full kernel.org (Linux CNA) CVE feed that backs
 .BR \-\-kernel\-cves\-all .
+.TP
+.B \-\-no\-fetch
+Suppress the interactive offer to download the CVE mirror. When the
+.B \-\-cve
+pass runs with no local mirror on an interactive terminal,
+.B mithril
+otherwise asks whether to fetch it. With
+.B \-\-no\-fetch
+(or the environment variable
+.BR MITHRIL_NO_FETCH ),
+it never asks: a missing mirror is reported as an error and the scan exits
+nonzero, as in a non-interactive run. Use it in scripts and CI.
 .SS Configuration
 .TP
 .BI \-\-rules " FILE"

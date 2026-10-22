@@ -165,7 +165,7 @@ std::string emit_report_human(const Report& rep, const Passes& passes, const std
     // ---- CVE matches ----
     // The default view is gated to high-signal component CVEs (KEV / CVSS>=9.0 /
     // EPSS>=0.10) and sorted worst-first, so a manual pentester triages by impact
-    // instead of reading a flat dump of every range match. --component-cves-all
+    // instead of reading a flat dump of every range match. --component-cves-full
     // shows the full list; JSON (-j) is always complete regardless of the gate.
     if (passes.cve) {
         if (passes.secrets || passes.sbom) o += "\n";
@@ -194,7 +194,7 @@ std::string emit_report_human(const Report& rep, const Passes& passes, const std
         }
         o += "\n";
 
-        // Rows to render: high-signal only (default) or all (--component-cves-all).
+        // Rows to render: high-signal only (default) or all (--component-cves-full).
         std::vector<Row> show;
         for (const auto& r : rows)
             if (rep.component_cves_all || r.high) show.push_back(r);
@@ -259,7 +259,7 @@ std::string emit_report_human(const Report& rep, const Passes& passes, const std
             o += a.dim();
             o += "\n  Gated to high-signal (KEV, or High/Critical CVSS>=7.0 with EPSS "
                  "traction, real impact or trending remote DoS).\n"
-                 "  Run --component-cves-all for every component CVE in range.\n";
+                 "  Run --component-cves-full for every component CVE in range.\n";
             o += a.reset();
         }
     }
@@ -404,7 +404,7 @@ std::string emit_report_human(const Report& rep, const Passes& passes, const std
                 o += "\n";
             }
         }
-        // --kernel-cves-all: the full kernel.org feed, version-matched. Can be
+        // --kernel-cves-full: the full kernel.org feed, version-matched. Can be
         // hundreds of lines, so cap the human list and point at -j for the rest.
         if (rep.kernel_cves_full) {
             o += "\n";
@@ -459,7 +459,7 @@ std::string emit_report_human(const Report& rep, const Passes& passes, const std
         o += rep.kernel_cves_full
                  ? "  Curated entries are kconfig-gated; feed entries are version-matched "
                    "(confirm the backport)."
-                 : "  Curated high-signal set. Run --kernel-cves-all for every kernel CVE in range.";
+                 : "  Curated high-signal set. Run --kernel-cves-full for every kernel CVE in range.";
         o += a.reset();
         o += "\n";
     }

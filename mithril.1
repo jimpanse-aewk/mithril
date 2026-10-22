@@ -1,4 +1,4 @@
-.TH MITHRIL 1 "2026-10-05" "mithril 0.3.0" "User Commands"
+.TH MITHRIL 1 "2026-10-22" "mithril 0.4.0" "User Commands"
 .SH NAME
 mithril \- analyze firmware contents for secrets, SBOM, CVEs, and licenses
 .SH SYNOPSIS
@@ -90,25 +90,34 @@ Run every pass. This is the default when no pass is named.
 .TP
 .BR \-j ", " \-\-json
 Emit a single JSON object instead of the human-readable view. JSON always
-carries the complete result set. Use this when a tool or model will parse the
-output.
+carries the complete result set, so the detail options below only affect the
+human view. Use this when a tool or model will parse the output.
+.TP
+.BR \-v ", " \-\-verbose
+Human view: show full values instead of tail-truncating long ones with
+.RB \(lq ... \(rq.
 .TP
 .B \-\-license\-paths
 List the file locations of each license, not just a count (human output).
 Implies
 .BR \-\-licenses .
 .TP
-.B \-\-component\-cves\-all
+.B \-\-component\-cves\-full
 Human view: list every component CVE, not just the high-signal set (on CISA
 KEV, or CVSS 9.0 and above, or EPSS 0.10 and above). Implies
 .BR \-\-cve .
 .TP
-.B \-\-kernel\-cves\-all
+.B \-\-kernel\-cves\-full
 List every CVE for the detected kernel version, matched branch-aware, instead
 of the curated high-signal checklist. Needs the kernel feed (see
 .BR \-\-with\-kernel\-feed ).
 Implies
 .BR \-\-cve .
+.TP
+.B \-\-full
+Maximum human detail in one switch: equivalent to
+.BR \-\-verbose ", " \-\-license\-paths ", " \-\-component\-cves\-full ", and " \-\-kernel\-cves\-full
+together. No effect on JSON, which is always complete.
 .TP
 .B \-\-dump\-kconfig
 Print the recovered kernel
@@ -138,7 +147,7 @@ Given with
 or
 .BR \-\-update\-db ,
 also fetch the optional full kernel.org (Linux CNA) CVE feed that backs
-.BR \-\-kernel\-cves\-all .
+.BR \-\-kernel\-cves\-full .
 .TP
 .B \-\-no\-fetch
 Suppress the interactive offer to download the CVE mirror. When the
@@ -157,8 +166,23 @@ nonzero, as in a non-interactive run. Use it in scripts and CI.
 Add user-defined detection rules from a JSON file.
 .TP
 .BR \-C ", " \-\-outdir " " \fIDIR\fR
-Write the JSON report to
-.IR DIR /mithril\-report.json .
+Also write the report to
+.IR DIR ,
+regardless of the stdout format:
+.I mithril\-report.json
+(the complete JSON result set) and, when the SBOM pass runs,
+.I sbom.cdx.json
+and
+.I sbom.spdx.json
+(the CycloneDX and SPDX bills of materials). These standard-format SBOMs are
+produced only through
+.BR \-C .
+Note that
+.BR moria (1)
+also has a
+.B \-C
+but means its extraction output directory; here it is the report output
+directory.
 .TP
 .BI \-\-threads " N"
 Worker threads for tree scans. Default: automatic.

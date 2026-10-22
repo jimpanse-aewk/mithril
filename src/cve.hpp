@@ -106,7 +106,7 @@ double cvss_base_score(const std::string& vector);
 //   - it is on the CISA KEV catalog (exploited in the wild) -- unconditional; OR
 //   - (it is NOT a vendor-fork component matched only by an unbounded-below range:
 //     such a match cannot be confirmed to apply -- a fork's base may predate the
-//     vulnerable code -- so it is demoted to the --component-cves-all list); AND
+//     vulnerable code -- so it is demoted to the --component-cves-full list); AND
 //   - its CVSS base score is >= 9.0 (Critical) -- any shape; OR
 //   - it clears a hard High/Critical floor (base score >= 7.0) AND has EPSS
 //     traction (>= 0.10) AND is low-complexity (AC:L) AND EITHER
@@ -118,7 +118,7 @@ double cvss_base_score(const std::string& vector);
 // but low-yield crypto/DoS CVEs old libraries accumulate (SWEET32, DROWN, padding
 // oracles). A pure DoS cannot reach CVSS 9.0, so the Critical arm needs no test.
 // Scores are computed for CVSS v2 and v3 alike so the floor judges old CVEs
-// instead of hiding them. --component-cves-all bypasses the whole gate; kernel
+// instead of hiding them. --component-cves-full bypasses the whole gate; kernel
 // CVEs gate separately.
 constexpr double kHighSignalCvss = 9.0;   // Critical: always shown
 constexpr double kHighFloorCvss = 7.0;    // hard floor: High/Critical only below Critical

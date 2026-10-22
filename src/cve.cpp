@@ -236,7 +236,7 @@ bool cve_is_high_signal(const CveMatch& m) {
     // A vendor-fork component matched only by an unbounded-below range: we cannot
     // confirm the fork's base carries the vulnerable code (e.g. a 0.8.x_rtw hostapd
     // predates SAE), so drop it from the default view. Still listed under
-    // --component-cves-all with the "verify" basis. KEV above overrides this.
+    // --component-cves-full with the "verify" basis. KEV above overrides this.
     if (m.fork && m.unbounded_below) return false;
     double score = cvss_base_score(m.severity);
     if (score >= kHighSignalCvss) return true;                   // Critical, any shape

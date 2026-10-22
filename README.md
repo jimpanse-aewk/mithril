@@ -44,8 +44,8 @@ mithril -j <dir>              # JSON, for tools and agents
 mithril --secrets <dir>       # secrets only
 mithril --sbom -C out/ <dir>  # SBOM only -> out/sbom.cdx.json + out/sbom.spdx.json
 mithril --cve <dir>           # match components against the local mirror (offline)
-mithril --cve --kernel-cves-all <dir>  # also list every kernel.org CVE for the kernel version (opt-in)
-mithril --cve --component-cves-all <dir>  # human view: list every component CVE, not just high-signal (opt-in)
+mithril --cve --kernel-cves-full <dir>  # also list every kernel.org CVE for the kernel version (opt-in)
+mithril --cve --component-cves-full <dir>  # human view: list every component CVE, not just high-signal (opt-in)
 mithril --licenses <dir>      # licenses only
 mithril --license-paths <dir> # licenses, with each license's file locations listed
 mithril --boot <dir>          # boot-security intel: U-Boot env, device tree, FIT/AVB, UEFI Secure Boot
@@ -69,15 +69,15 @@ Naming any of `--secrets` / `--sbom` / `--cve` / `--licenses` / `--boot` / `--ke
 - **`mithril --fetch-db`** downloads a prebuilt index (rebuilt weekly) and verifies every file against a published SHA-256 before installing. It does no upstream scraping: it just fetches the finished index. Needs `curl`. Point it at a mirror with `$MITHRIL_DB_URL`.
 - **`mithril --update-db`** rebuilds the index from the upstream feeds yourself. Slower, needs `curl` and `unzip`, and is the authoritative path if you want to control exactly what goes in. Set `$NVD_API_KEY` to raise the NVD rate limit (optional; it works without one, just slower).
 
-Add **`--with-kernel-feed`** to either command to also get the optional full **kernel.org (Linux CNA) CVE feed** that backs [`--kernel-cves-all`](docs/cve-join.md). By default the kernel is triaged by a curated high-signal checklist; `--kernel-cves-all` lists every kernel.org CVE for the detected version instead, matched branch-aware (a bug fixed in 6.6.17 is reported for 6.6.10 but not 6.6.110). It is a separate asset so the base mirror stays lean; building it needs `tar`.
+Add **`--with-kernel-feed`** to either command to also get the optional full **kernel.org (Linux CNA) CVE feed** that backs [`--kernel-cves-full`](docs/cve-join.md). By default the kernel is triaged by a curated high-signal checklist; `--kernel-cves-full` lists every kernel.org CVE for the detected version instead, matched branch-aware (a bug fixed in 6.6.17 is reported for 6.6.10 but not 6.6.110). It is a separate asset so the base mirror stays lean; building it needs `tar`.
 
 Build it once either way; every scan after that is offline. See `docs/cve-join.md` and `docs/cve-index-format.md`.
 
 ## Scope
 
 - **secrets**: credential and key material in file content (cloud keys, tokens, JWTs, private keys, high-entropy `KEY=…` values). `/etc/shadow` and `htpasswd` hashes are classified with weak-algorithm and empty-password flags, and credential/crypto/config files are flagged by path.
-- **sbom**: components and versions from package databases, language manifests, binary version strings, libc filenames, and the kernel banner, keyed on purl (with CPE co-derived), emitted as CycloneDX and SPDX.
-- **cve**: the SBOM joined against the local OSV + NVD/CPE mirror, plus the curated kernel-CVE checklist, annotated with KEV and EPSS. The default human view shows only foothold-worthy component CVEs (on CISA KEV, or Critical, or a hard High/Critical floor of CVSS >= 7.0 with EPSS traction, low attack complexity, and real impact or a trending remote DoS), sorted worst-first; it drops Mediums, local DoS, and the high-complexity crypto class. `--component-cves-all` lists them all. JSON always carries the complete set plus a `component_cve_scan` summary.
+- **sbom**: components and versions from package databases, language manifests, binary version strings, libc filenames, and the kernel banner, keyed on purl (with CPE co-derived). The JSON report always carries the components inline; the standard-format bills of materials (CycloneDX and SPDX) are written as `sbom.cdx.json` and `sbom.spdx.json` when you pass `-C/--outdir`.
+- **cve**: the SBOM joined against the local OSV + NVD/CPE mirror, plus the curated kernel-CVE checklist, annotated with KEV and EPSS. The default human view shows only foothold-worthy component CVEs (on CISA KEV, or Critical, or a hard High/Critical floor of CVSS >= 7.0 with EPSS traction, low attack complexity, and real impact or a trending remote DoS), sorted worst-first; it drops Mediums, local DoS, and the high-complexity crypto class. `--component-cves-full` lists them all. JSON always carries the complete set plus a `component_cve_scan` summary.
 - **licenses**: SPDX identification from `SPDX-License-Identifier` tags and LICENSE/COPYING/NOTICE text. Human output summarizes by id and count; `--license-paths` lists each license's file locations, and JSON always carries the full `paths` array.
 
 File-type identification, extraction, and embedded key/certificate *file* signatures are moria's job; mithril reads content, it does not unpack. How discovery works is documented in `docs/engine-design.md`.

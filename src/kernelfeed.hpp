@@ -1,4 +1,4 @@
-// kernelfeed.hpp — the full kernel.org (Linux CNA) CVE feed, for --kernel-cves-all.
+// kernelfeed.hpp — the full kernel.org (Linux CNA) CVE feed, for --kernel-cves-full.
 //
 // The curated table (kernelcve.hpp) is the high-signal default: a hand-picked set
 // of widely-exploited kernel bugs, kconfig-gated. It is deliberately partial and

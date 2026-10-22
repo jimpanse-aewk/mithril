@@ -15,7 +15,7 @@ namespace ft {
 // success; on failure returns non-zero and sets `err`. Progress to stderr.
 // This is the authoritative rebuild path (scrapes OSV + NVD at the source).
 // `with_kernel_feed` additionally builds the full kernel.org CVE feed (a large
-// extra download; off by default — it only serves --kernel-cves-all).
+// extra download; off by default — it only serves --kernel-cves-full).
 int cve_update(std::string& err, bool with_kernel_feed = false);
 
 // Download a prebuilt index from the rolling release (or $MITHRIL_DB_URL) and

@@ -537,7 +537,7 @@ int epss_update(std::string& err) {
 }
 
 // Build the full kernel.org (Linux CNA) CVE feed index from the vulns snapshot.
-// A large, optional asset (only --kernel-cves-all reads it): fetch the cgit
+// A large, optional asset (only --kernel-cves-full reads it): fetch the cgit
 // tarball, extract with tar, reconstruct one entry per published CVE record,
 // write kernel-cve-index.json. Needs curl + tar.
 int kernel_feed_update(std::string& err) {

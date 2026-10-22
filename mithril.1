@@ -166,8 +166,23 @@ nonzero, as in a non-interactive run. Use it in scripts and CI.
 Add user-defined detection rules from a JSON file.
 .TP
 .BR \-C ", " \-\-outdir " " \fIDIR\fR
-Write the JSON report to
-.IR DIR /mithril\-report.json .
+Also write the report to
+.IR DIR ,
+regardless of the stdout format:
+.I mithril\-report.json
+(the complete JSON result set) and, when the SBOM pass runs,
+.I sbom.cdx.json
+and
+.I sbom.spdx.json
+(the CycloneDX and SPDX bills of materials). These standard-format SBOMs are
+produced only through
+.BR \-C .
+Note that
+.BR moria (1)
+also has a
+.B \-C
+but means its extraction output directory; here it is the report output
+directory.
 .TP
 .BI \-\-threads " N"
 Worker threads for tree scans. Default: automatic.
